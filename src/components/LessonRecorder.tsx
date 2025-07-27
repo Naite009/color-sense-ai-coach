@@ -4,12 +4,17 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useLessonRecorder } from '@/hooks/useLessonRecorder';
+import { LessonRecording } from '@/types/lesson';
 import { Play, Square, Save } from 'lucide-react';
 
-export const LessonRecorder = () => {
+interface LessonRecorderProps {
+  onLessonSaved: (lesson: LessonRecording) => void;
+  savedLessons: LessonRecording[];
+}
+
+export const LessonRecorder = ({ onLessonSaved, savedLessons }: LessonRecorderProps) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [savedLessons, setSavedLessons] = useState<any[]>([]);
   
   const {
     isRecording,
@@ -32,7 +37,7 @@ export const LessonRecorder = () => {
     if (!title.trim()) return;
     
     const lesson = saveLesson(title, description);
-    setSavedLessons(prev => [...prev, lesson]);
+    onLessonSaved(lesson);
     setTitle('');
     setDescription('');
   };
