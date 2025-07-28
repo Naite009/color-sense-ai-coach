@@ -24,6 +24,9 @@ export interface LessonRecording {
   // Camera recording data
   videoBlob?: Blob;
   videoUrl?: string;
+  // Identity verification
+  referenceImageBlob?: Blob;
+  referenceImageUrl?: string;
   createdAt: Date;
   createdBy: string;
 }

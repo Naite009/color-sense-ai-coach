@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { LessonRecording, StudentProgress } from '@/types/lesson';
-import { CheckCircle, XCircle, Target, Camera } from 'lucide-react';
+import { geminiVerification } from '@/services/geminiVerification';
+import { CheckCircle, XCircle, Target, Camera, Key, Shield } from 'lucide-react';
 
 interface LessonTestProps {
   lesson: LessonRecording;
@@ -19,12 +20,28 @@ export const LessonTest = ({ lesson, onComplete }: LessonTestProps) => {
   const [accuracy, setAccuracy] = useState(100);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string>('');
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [verificationStatus, setVerificationStatus] = useState<'pending' | 'verifying' | 'passed' | 'failed'>('pending');
+  const [verificationMessage, setVerificationMessage] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const intervalRef = useRef<NodeJS.Timeout>();
   const checkIntervalRef = useRef<NodeJS.Timeout>();
 
   const startTest = async () => {
+    if (!geminiApiKey.trim()) {
+      setCameraError('Gemini API key is required for verification');
+      return;
+    }
+
+    if (!lesson.referenceImageBlob) {
+      setCameraError('No reference image found for this lesson');
+      return;
+    }
+
     try {
+      // Set up Gemini API
+      geminiVerification.setApiKey(geminiApiKey);
+      
       // Request camera access for identity verification
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: true, 
@@ -35,12 +52,45 @@ export const LessonTest = ({ lesson, onComplete }: LessonTestProps) => {
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        
+        // Wait for video to be ready and perform verification
+        videoRef.current.onloadedmetadata = () => {
+          setTimeout(() => performVerification(), 2000);
+        };
       }
     } catch (error) {
       setCameraError('Camera access is required for test verification');
       console.error('Camera access denied:', error);
       return;
     }
+  };
+
+  const performVerification = async () => {
+    if (!videoRef.current || !lesson.referenceImageBlob) return;
+    
+    setVerificationStatus('verifying');
+    setVerificationMessage('Verifying your identity...');
+    
+    try {
+      const currentImageBlob = await geminiVerification.captureImageFromVideo(videoRef.current);
+      const result = await geminiVerification.verifyIdentity(lesson.referenceImageBlob, currentImageBlob);
+      
+      if (result.isMatch && result.confidence >= 70) {
+        setVerificationStatus('passed');
+        setVerificationMessage(`Identity verified (${result.confidence}% confidence)`);
+        startActualTest();
+      } else {
+        setVerificationStatus('failed');
+        setVerificationMessage(`Identity verification failed: ${result.reason}`);
+      }
+    } catch (error) {
+      setVerificationStatus('failed');
+      setVerificationMessage('Verification failed due to technical error');
+      console.error('Verification error:', error);
+    }
+  };
+
+  const startActualTest = () => {
 
     setIsTestActive(true);
     setCurrentTime(0);
@@ -154,8 +204,26 @@ export const LessonTest = ({ lesson, onComplete }: LessonTestProps) => {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!isTestActive ? (
+        {!isTestActive && verificationStatus === 'pending' ? (
           <div className="text-center space-y-4">
+            <div>
+              <label htmlFor="gemini-api-key" className="block text-sm font-medium mb-2 flex items-center justify-center gap-2">
+                <Key className="w-4 h-4" />
+                Gemini API Key (for verification)
+              </label>
+              <Input
+                id="gemini-api-key"
+                type="password"
+                value={geminiApiKey}
+                onChange={(e) => setGeminiApiKey(e.target.value)}
+                placeholder="Enter your Gemini API key..."
+                className="max-w-md mx-auto"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Required for identity verification. Get your key from Google AI Studio.
+              </p>
+            </div>
+            
             <div className="flex items-center justify-center gap-2 mb-4">
               <Camera className="w-5 h-5 text-primary" />
               <span className="text-sm text-muted-foreground">Camera verification required</span>
@@ -166,8 +234,43 @@ export const LessonTest = ({ lesson, onComplete }: LessonTestProps) => {
             {cameraError && (
               <p className="text-red-600 text-sm">{cameraError}</p>
             )}
-            <Button onClick={startTest} size="lg">
+            <Button onClick={startTest} size="lg" disabled={!geminiApiKey.trim()}>
               Start Test & Enable Camera
+            </Button>
+          </div>
+        ) : verificationStatus === 'verifying' ? (
+          <div className="text-center space-y-4">
+            <div className="flex items-center justify-center gap-2">
+              <Shield className="w-6 h-6 text-blue-500 animate-spin" />
+              <span className="font-medium">Verifying Identity...</span>
+            </div>
+            <p className="text-muted-foreground">{verificationMessage}</p>
+            <div className="relative bg-muted rounded-lg overflow-hidden max-w-sm mx-auto">
+              <video
+                ref={videoRef}
+                autoPlay
+                muted
+                playsInline
+                className="w-full h-48 object-cover"
+              />
+            </div>
+          </div>
+        ) : verificationStatus === 'failed' ? (
+          <div className="text-center space-y-4">
+            <div className="flex items-center justify-center gap-2">
+              <XCircle className="w-6 h-6 text-red-500" />
+              <span className="font-medium text-red-700">Verification Failed</span>
+            </div>
+            <p className="text-red-600">{verificationMessage}</p>
+            <Button onClick={() => {
+              setVerificationStatus('pending');
+              setVerificationMessage('');
+              if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                setCameraStream(null);
+              }
+            }} variant="outline">
+              Try Again
             </Button>
           </div>
         ) : (

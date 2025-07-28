@@ -5,7 +5,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useLessonRecorder } from '@/hooks/useLessonRecorder';
 import { LessonRecording } from '@/types/lesson';
-import { Play, Square, Save, Camera, Monitor } from 'lucide-react';
+import { geminiVerification } from '@/services/geminiVerification';
+import { Play, Square, Save, Camera, Monitor, Key } from 'lucide-react';
 
 interface LessonRecorderProps {
   onLessonSaved: (lesson: LessonRecording) => void;
@@ -16,6 +17,7 @@ export const LessonRecorder = ({ onLessonSaved, savedLessons }: LessonRecorderPr
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [selectedMode, setSelectedMode] = useState<'screen' | 'camera'>('screen');
+  const [geminiApiKey, setGeminiApiKey] = useState('');
   
   const {
     isRecording,
@@ -23,12 +25,17 @@ export const LessonRecorder = ({ onLessonSaved, savedLessons }: LessonRecorderPr
     mouseEvents,
     keystrokeEvents,
     videoBlob,
+    referenceImageBlob,
+    videoRef,
     startRecording,
     stopRecording,
     saveLesson
   } = useLessonRecorder();
 
   const handleStartRecording = () => {
+    if (geminiApiKey) {
+      geminiVerification.setApiKey(geminiApiKey);
+    }
     startRecording(selectedMode);
   };
 
@@ -56,6 +63,24 @@ export const LessonRecorder = ({ onLessonSaved, savedLessons }: LessonRecorderPr
           <CardTitle>Record New Lesson</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div>
+            <label htmlFor="gemini-api-key" className="block text-sm font-medium mb-2 flex items-center gap-2">
+              <Key className="w-4 h-4" />
+              Gemini API Key (for face verification)
+            </label>
+            <Input
+              id="gemini-api-key"
+              type="password"
+              value={geminiApiKey}
+              onChange={(e) => setGeminiApiKey(e.target.value)}
+              placeholder="Enter your Gemini API key..."
+              disabled={isRecording}
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Required for identity verification during tests. Get your key from Google AI Studio.
+            </p>
+          </div>
+
           <div>
             <label className="text-sm font-medium mb-2 block">Recording Mode</label>
             <div className="flex gap-2">
@@ -130,8 +155,33 @@ export const LessonRecorder = ({ onLessonSaved, savedLessons }: LessonRecorderPr
                 </p>
               )}
               {recordingType === 'camera' && (
-                <p className="text-sm text-red-600">Camera recording active</p>
+                <div className="space-y-2">
+                  <p className="text-sm text-red-600">Camera recording active</p>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    className="w-full max-w-sm rounded-lg bg-muted"
+                  />
+                </div>
               )}
+            </div>
+          )}
+
+          {!isRecording && referenceImageBlob && (
+            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-start gap-4">
+                <div>
+                  <p className="text-green-800 font-medium mb-2">Verification Image Captured</p>
+                  <p className="text-sm text-green-600">This image will be used to verify identity during tests.</p>
+                </div>
+                <img
+                  src={URL.createObjectURL(referenceImageBlob)}
+                  alt="Reference for verification"
+                  className="w-20 h-20 rounded-lg object-cover bg-muted"
+                />
+              </div>
             </div>
           )}
         </CardContent>

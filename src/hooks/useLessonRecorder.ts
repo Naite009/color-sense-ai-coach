@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { MouseEvent, KeystrokeEvent, LessonRecording } from '@/types/lesson';
+import { geminiVerification } from '@/services/geminiVerification';
 
 export const useLessonRecorder = () => {
   const [isRecording, setIsRecording] = useState(false);
@@ -8,6 +9,8 @@ export const useLessonRecorder = () => {
   const [keystrokeEvents, setKeystrokeEvents] = useState<KeystrokeEvent[]>([]);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
+  const [referenceImageBlob, setReferenceImageBlob] = useState<Blob | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const startTimeRef = useRef<number>(0);
   const cleanupRef = useRef<(() => void) | null>(null);
 
@@ -17,6 +20,7 @@ export const useLessonRecorder = () => {
     setMouseEvents([]);
     setKeystrokeEvents([]);
     setVideoBlob(null);
+    setReferenceImageBlob(null);
     startTimeRef.current = Date.now();
 
     if (type === 'camera') {
@@ -43,6 +47,24 @@ export const useLessonRecorder = () => {
         
         recorder.start();
         setMediaRecorder(recorder);
+        
+        // Set up video element for reference capture
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          
+          // Capture reference image after 3 seconds
+          setTimeout(async () => {
+            if (videoRef.current && videoRef.current.videoWidth > 0) {
+              try {
+                const imageBlob = await geminiVerification.captureImageFromVideo(videoRef.current);
+                setReferenceImageBlob(imageBlob);
+                console.log('Reference image captured for verification');
+              } catch (error) {
+                console.error('Failed to capture reference image:', error);
+              }
+            }
+          }, 3000);
+        }
         
         cleanupRef.current = () => {
           stream.getTracks().forEach(track => track.stop());
@@ -135,6 +157,11 @@ export const useLessonRecorder = () => {
       lesson.videoUrl = URL.createObjectURL(videoBlob);
     }
     
+    if (referenceImageBlob) {
+      lesson.referenceImageBlob = referenceImageBlob;
+      lesson.referenceImageUrl = URL.createObjectURL(referenceImageBlob);
+    }
+    
     return lesson;
   }, [recordingType, mouseEvents, keystrokeEvents, videoBlob]);
 
@@ -144,6 +171,8 @@ export const useLessonRecorder = () => {
     mouseEvents,
     keystrokeEvents,
     videoBlob,
+    referenceImageBlob,
+    videoRef,
     startRecording,
     stopRecording,
     saveLesson
