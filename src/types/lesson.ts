@@ -17,8 +17,13 @@ export interface LessonRecording {
   title: string;
   description?: string;
   duration: number;
+  recordingType: 'screen' | 'camera';
+  // Screen recording data
   mouseEvents: MouseEvent[];
   keystrokeEvents: KeystrokeEvent[];
+  // Camera recording data
+  videoBlob?: Blob;
+  videoUrl?: string;
   createdAt: Date;
   createdBy: string;
 }
