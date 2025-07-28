@@ -100,9 +100,13 @@ export const useLessonRecorder = () => {
   const stopRecording = useCallback(() => {
     setIsRecording(false);
     
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-      mediaRecorder.stop();
-    }
+    // Use the current state value directly instead of from closure
+    setMediaRecorder(currentRecorder => {
+      if (currentRecorder && currentRecorder.state === 'recording') {
+        currentRecorder.stop();
+      }
+      return null;
+    });
     
     if (cleanupRef.current) {
       cleanupRef.current();
@@ -110,7 +114,7 @@ export const useLessonRecorder = () => {
     }
     
     return Date.now() - startTimeRef.current;
-  }, [mediaRecorder]);
+  }, []); // Remove mediaRecorder from dependency array
 
   const saveLesson = useCallback((title: string, description?: string): LessonRecording => {
     const duration = Date.now() - startTimeRef.current;
