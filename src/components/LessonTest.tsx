@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { LessonRecording, StudentProgress } from '@/types/lesson';
-import { CheckCircle, XCircle, Target } from 'lucide-react';
+import { CheckCircle, XCircle, Target, Camera } from 'lucide-react';
 
 interface LessonTestProps {
   lesson: LessonRecording;
@@ -17,10 +17,31 @@ export const LessonTest = ({ lesson, onComplete }: LessonTestProps) => {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [feedback, setFeedback] = useState<string[]>([]);
   const [accuracy, setAccuracy] = useState(100);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraError, setCameraError] = useState<string>('');
+  const videoRef = useRef<HTMLVideoElement>(null);
   const intervalRef = useRef<NodeJS.Timeout>();
   const checkIntervalRef = useRef<NodeJS.Timeout>();
 
-  const startTest = () => {
+  const startTest = async () => {
+    try {
+      // Request camera access for identity verification
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: true, 
+        audio: false 
+      });
+      setCameraStream(stream);
+      setCameraError('');
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (error) {
+      setCameraError('Camera access is required for test verification');
+      console.error('Camera access denied:', error);
+      return;
+    }
+
     setIsTestActive(true);
     setCurrentTime(0);
     setStudentInput('');
@@ -61,6 +82,12 @@ export const LessonTest = ({ lesson, onComplete }: LessonTestProps) => {
     setIsTestActive(false);
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (checkIntervalRef.current) clearInterval(checkIntervalRef.current);
+    
+    // Stop camera stream
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
     
     const results: StudentProgress = {
       lessonId: lesson.id,
@@ -110,8 +137,11 @@ export const LessonTest = ({ lesson, onComplete }: LessonTestProps) => {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (checkIntervalRef.current) clearInterval(checkIntervalRef.current);
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+      }
     };
-  }, []);
+  }, [cameraStream]);
 
   const progress = (currentTime / lesson.duration) * 100;
 
@@ -126,63 +156,98 @@ export const LessonTest = ({ lesson, onComplete }: LessonTestProps) => {
       <CardContent className="space-y-4">
         {!isTestActive ? (
           <div className="text-center space-y-4">
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <Camera className="w-5 h-5 text-primary" />
+              <span className="text-sm text-muted-foreground">Camera verification required</span>
+            </div>
             <p className="text-muted-foreground">
-              Ready to take the test? Follow the lesson instructions exactly.
+              Ready to take the test? Your camera will be activated for identity verification.
             </p>
+            {cameraError && (
+              <p className="text-red-600 text-sm">{cameraError}</p>
+            )}
             <Button onClick={startTest} size="lg">
-              Start Test
+              Start Test & Enable Camera
             </Button>
           </div>
         ) : (
           <>
-            <div className="space-y-2">
-              <div className="w-full bg-muted h-2 rounded-full">
-                <div 
-                  className="bg-primary h-2 rounded-full transition-all duration-100" 
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <div className="flex justify-between text-sm">
-                <span>Progress: {Math.round(progress)}%</span>
-                <span>Accuracy: {accuracy}%</span>
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="student-input" className="block text-sm font-medium mb-2">
-                Type here (follow the lesson):
-              </label>
-              <Input
-                id="student-input"
-                value={studentInput}
-                onChange={(e) => setStudentInput(e.target.value)}
-                placeholder="Type as shown in the lesson..."
-              />
-            </div>
-
-            <div className="space-y-2 max-h-32 overflow-y-auto">
-              {feedback.map((item, index) => (
-                <div 
-                  key={index} 
-                  className={`flex items-center gap-2 text-sm p-2 rounded ${
-                    item.includes('Error') 
-                      ? 'bg-red-50 text-red-700' 
-                      : 'bg-green-50 text-green-700'
-                  }`}
-                >
-                  {item.includes('Error') ? (
-                    <XCircle className="w-4 h-4" />
-                  ) : (
-                    <CheckCircle className="w-4 h-4" />
-                  )}
-                  {item}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2 space-y-4">
+                <div className="space-y-2">
+                  <div className="w-full bg-muted h-2 rounded-full">
+                    <div 
+                      className="bg-primary h-2 rounded-full transition-all duration-100" 
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span>Progress: {Math.round(progress)}%</span>
+                    <span>Accuracy: {accuracy}%</span>
+                  </div>
                 </div>
-              ))}
-            </div>
 
-            <Button onClick={endTest} variant="outline">
-              End Test Early
-            </Button>
+                <div>
+                  <label htmlFor="student-input" className="block text-sm font-medium mb-2">
+                    Type here (follow the lesson):
+                  </label>
+                  <Input
+                    id="student-input"
+                    value={studentInput}
+                    onChange={(e) => setStudentInput(e.target.value)}
+                    placeholder="Type as shown in the lesson..."
+                  />
+                </div>
+
+                <div className="space-y-2 max-h-32 overflow-y-auto">
+                  {feedback.map((item, index) => (
+                    <div 
+                      key={index} 
+                      className={`flex items-center gap-2 text-sm p-2 rounded ${
+                        item.includes('Error') 
+                          ? 'bg-red-50 text-red-700' 
+                          : 'bg-green-50 text-green-700'
+                      }`}
+                    >
+                      {item.includes('Error') ? (
+                        <XCircle className="w-4 h-4" />
+                      ) : (
+                        <CheckCircle className="w-4 h-4" />
+                      )}
+                      {item}
+                    </div>
+                  ))}
+                </div>
+
+                <Button onClick={endTest} variant="outline">
+                  End Test Early
+                </Button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="text-center">
+                  <h3 className="text-sm font-medium mb-2 flex items-center justify-center gap-2">
+                    <Camera className="w-4 h-4" />
+                    Identity Verification
+                  </h3>
+                  <div className="relative bg-muted rounded-lg overflow-hidden">
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      muted
+                      playsInline
+                      className="w-full h-48 object-cover"
+                    />
+                    <div className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded">
+                      RECORDING
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Camera verification active
+                  </p>
+                </div>
+              </div>
+            </div>
           </>
         )}
       </CardContent>
